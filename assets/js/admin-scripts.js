@@ -23,8 +23,11 @@ jQuery(document).ready(function($) {
                             $("#upload-status").text(`Adding Data... ${processedRows}/${total}`);
                         }
 
-                        // ✅ Adjust progress bar width dynamically
-                        $("#progress-bar").css("width", percentComplete + "%");
+                        // ✅ Update progress bar width dynamically
+                        $("#progress-bar").css({
+                            width: `${percentComplete}%`,
+                            background: "green"
+                        });
 
                         // ✅ Move to the next stage after CSV processing is done
                         if (processedRows >= total && stage === "processing") {
@@ -41,9 +44,12 @@ jQuery(document).ready(function($) {
                             $("#upload-status").text("Upload Complete ✅");
 
                             setTimeout(() => {
-                                $("#upload-popup").fadeOut();
-                                $("#progress-bar").css("width", "0%"); // Reset bar
-                            }, 2000);
+                                $("#progress-bar").css("width", "100%");
+                                setTimeout(() => {
+                                    $("#upload-popup").fadeOut();
+                                    $("#progress-bar").css("width", "0%"); // Reset bar
+                                }, 2000);
+                            }, 1000);
                         }
                     } else {
                         console.error("❌ Progress Error:", response.message);

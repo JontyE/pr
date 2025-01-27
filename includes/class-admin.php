@@ -46,7 +46,10 @@ class PR_Admin {
         $progress = get_transient('csv_import_progress');
     
         if (!$progress) {
-            wp_send_json_error(['message' => 'No progress data found.']);
+            wp_send_json_success([
+                'processed_rows' => 0,
+                'total_rows' => 1, // Default to prevent division by zero
+            ]);
             return;
         }
     
@@ -55,9 +58,8 @@ class PR_Admin {
             'total_rows' => $progress['total'] ?? 1,
         ]);
     }
- 
-
     
+   
     
 
     public static function enqueue_scripts() {
@@ -67,7 +69,7 @@ class PR_Admin {
     }
     
 }
-
+add_action('wp_ajax_check_import_progress', ['PR_Admin', 'check_import_progress']);
 add_action('admin_menu', ['PR_Admin', 'add_admin_menu']);
 add_action('admin_enqueue_scripts', ['PR_Admin', 'enqueue_scripts']);
 add_action('wp_ajax_check_progress', ['PR_Admin', 'check_import_progress']);
