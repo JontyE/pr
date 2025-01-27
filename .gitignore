@@ -1,0 +1,5 @@
+# Ignore unnecessary files
+*.log
+node_modules/
+vendor/
+
