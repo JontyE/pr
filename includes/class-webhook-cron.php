@@ -25,6 +25,7 @@ class PR_Webhook_Cron {
 
 // Hook into WP Cron
 add_action('pr_process_webhook_event', ['PR_Webhook_Cron', 'process_webhook_data']);
+
 register_activation_hook(__FILE__, ['PR_Webhook_Cron', 'schedule_event']);
 register_deactivation_hook(__FILE__, ['PR_Webhook_Cron', 'clear_scheduled_event']);
 

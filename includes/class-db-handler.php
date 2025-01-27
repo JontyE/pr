@@ -1,5 +1,4 @@
-<?php 
-
+<?php
 class PR_DB_Handler {
     public static function install_tables() {
         global $wpdb;
@@ -8,7 +7,7 @@ class PR_DB_Handler {
 
         $sql = "
         CREATE TABLE {$table_prefix}contacts (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+            contact_id INT AUTO_INCREMENT PRIMARY KEY,
             first_name VARCHAR(255) NOT NULL,
             last_name VARCHAR(255),
             email VARCHAR(255) UNIQUE NOT NULL,
@@ -25,7 +24,7 @@ class PR_DB_Handler {
             valid_until DATE DEFAULT NULL,
             total_price DECIMAL(10,2) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (contact_id) REFERENCES {$table_prefix}contacts(id) ON DELETE CASCADE
+            INDEX contact_idx (contact_id)
         ) $charset_collate;
 
         CREATE TABLE {$table_prefix}line_items (
@@ -38,7 +37,7 @@ class PR_DB_Handler {
             quantity INT NOT NULL,
             item_total DECIMAL(10,2) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (quote_id) REFERENCES {$table_prefix}quotes(id) ON DELETE CASCADE
+            INDEX quote_idx (quote_id)
         ) $charset_collate;
         ";
 
@@ -48,9 +47,36 @@ class PR_DB_Handler {
 
     public static function uninstall_tables() {
         global $wpdb;
+
+        // Check if foreign keys exist before dropping them
+        $fk_check_quotes = $wpdb->get_results("SHOW CREATE TABLE {$wpdb->prefix}quotes", ARRAY_N);
+        if (strpos($fk_check_quotes[0][1], "FOREIGN KEY") !== false) {
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}quotes DROP FOREIGN KEY {$wpdb->prefix}quotes_ibfk_1");
+        }
+
+        $fk_check_line_items = $wpdb->get_results("SHOW CREATE TABLE {$wpdb->prefix}line_items", ARRAY_N);
+        if (strpos($fk_check_line_items[0][1], "FOREIGN KEY") !== false) {
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}line_items DROP FOREIGN KEY {$wpdb->prefix}line_items_ibfk_1");
+        }
+
         $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}contacts, {$wpdb->prefix}quotes, {$wpdb->prefix}line_items");
     }
+
+    public static function check_tables_exist() {
+        global $wpdb;
+        $tables = ["contacts", "quotes", "line_items"];
+    
+        foreach ($tables as $table) {
+            $table_name = $wpdb->prefix . $table;
+            $exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'");
+    
+            if (!$exists) {
+                error_log("❌ Missing Table: $table_name");
+                return false;
+            }
+        }
+        return true;
+    }
+    
 }
-
-
 ?>
