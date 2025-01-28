@@ -1,4 +1,4 @@
-<?php
+ <?php
 
 class PR_Admin {
     public static function add_admin_menu() {
@@ -44,20 +44,32 @@ class PR_Admin {
 
     public static function check_import_progress() {
         $progress = get_transient('csv_import_progress');
-    
+
         if (!$progress) {
             wp_send_json_success([
+                'stage' => 'processing',
                 'processed_rows' => 0,
-                'total_rows' => 1, // Default to prevent division by zero
+                'total_rows' => 1,
             ]);
             return;
         }
-    
+
+        // Detect the current stage
+        $stage = $progress['stage'] ?? 'processing';
+
         wp_send_json_success([
+            'stage' => $stage,
             'processed_rows' => $progress['processed'] ?? 0,
             'total_rows' => $progress['total'] ?? 1,
         ]);
+
+         // ✅ If process is completed, clean up transient
+    if ($stage === 'completed') {
+        delete_transient('csv_import_progress');
     }
+    }
+
+    
     
    
     

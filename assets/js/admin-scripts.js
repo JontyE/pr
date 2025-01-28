@@ -1,7 +1,6 @@
-jQuery(document).ready(function($) {
-    function startDatabaseProgress(totalRows) {
-        let stage = "processing"; // Track the current stage
-        let interval = setInterval(function() {
+jQuery(document).ready(function ($) {
+    function startProgressTracking() {
+        let interval = setInterval(function () {
             $.ajax({
                 url: ajaxurl,
                 type: 'POST',
@@ -9,63 +8,47 @@ jQuery(document).ready(function($) {
                     action: 'check_import_progress',
                     security: pr_nonce
                 },
-                success: function(response) {
-                    console.log("🔍 Progress Response:", response);
-
+                success: function (response) {
                     if (response.success) {
-                        let processedRows = parseInt(response.data.processed_rows) || 0;
-                        let total = parseInt(response.data.total_rows) || 1; // Prevent division by zero
-                        let percentComplete = Math.round((processedRows / total) * 100);
+                        let stage = response.data.stage || "processing";
+                        let currentProcessed = parseInt(response.data.processed_rows) || 0;
+                        let total = parseInt(response.data.total_rows) || 1;
+                        let percentComplete = Math.round((currentProcessed / total) * 100);
 
                         if (stage === "processing") {
-                            $("#upload-status").text(`Processing CSV... ${processedRows}/${total}`);
+                            $("#upload-status").text(`Processing CSV... ${currentProcessed}/${total}`);
+                            $("#progress-bar").css({ width: `${percentComplete}%`, background: "red" });
+
+                            if (percentComplete >= 100) {
+                                clearInterval(interval);
+                                setTimeout(() => startProgressTracking(), 100); // Switch to "inserting"
+                            }
                         } else if (stage === "inserting") {
-                            $("#upload-status").text(`Adding Data... ${processedRows}/${total}`);
-                        }
-
-                        // ✅ Update progress bar width dynamically
-                        $("#progress-bar").css({
-                            width: `${percentComplete}%`,
-                            background: "green"
-                        });
-
-                        // ✅ Move to the next stage after CSV processing is done
-                        if (processedRows >= total && stage === "processing") {
-                            stage = "inserting";
-                            processedRows = 0; // Reset for database insertion tracking
-                            setTimeout(() => {
-                                $("#upload-status").text("Adding Data...");
-                            }, 1000);
-                        }
-
-                        // ✅ If database insertion is complete, close popup
-                        if (processedRows >= total && stage === "inserting") {
+                            $("#upload-status").text(`Inserting Data... ${currentProcessed}/${total}`);
+                            $("#progress-bar").css({ width: `${percentComplete}%`, background: "green" });
+    
+                        } else if (stage === "completed") {
                             clearInterval(interval);
                             $("#upload-status").text("Upload Complete ✅");
-
+    
                             setTimeout(() => {
-                                $("#progress-bar").css("width", "100%");
-                                setTimeout(() => {
-                                    $("#upload-popup").fadeOut();
-                                    $("#progress-bar").css("width", "0%"); // Reset bar
-                                }, 2000);
-                            }, 1000);
+                                $("#upload-popup").fadeOut();
+                                $("#progress-bar").css("width", "0%");
+                            }, 3000); // ✅ Hide popup after 3 seconds
                         }
-                    } else {
-                        console.error("❌ Progress Error:", response.message);
-                        $("#upload-status").text("Error fetching progress.");
                     }
                 },
-                error: function(xhr, status, error) {
-                    console.error("❌ Progress Check AJAX Error:", xhr.responseText || status, error);
+                error: function (xhr, status, error) {
+                    console.error("❌ AJAX Error:", xhr.responseText || status, error);
                     clearInterval(interval);
-                    $("#upload-status").text("Error checking progress.");
+                    $("#upload-status").text("Error occurred while tracking progress.");
+                    $("#progress-bar").css({ width: "100%", background: "red" });
                 }
             });
-        }, 1000); // Poll every second
+        }, 500);
     }
 
-    $("#upload_csv").on("click", function() {
+    $("#upload_csv").on("click", function () {
         let fileInput = $("#csv_file")[0].files[0];
         if (!fileInput) {
             alert("Please select a file first.");
@@ -77,10 +60,11 @@ jQuery(document).ready(function($) {
         formData.append("action", "import_csv");
         formData.append("security", pr_nonce);
 
-        // ✅ Ensure Bootstrap Modal Shows Correctly
         $("#upload-popup").fadeIn();
         $("#progress-bar").css({ width: "0%", background: "#28a745" });
         $("#upload-status").text("Uploading file...");
+
+        startProgressTracking(); // Start tracking before upload completes
 
         $.ajax({
             url: ajaxurl,
@@ -88,22 +72,12 @@ jQuery(document).ready(function($) {
             data: formData,
             processData: false,
             contentType: false,
-            success: function(response) {
-                console.log("✅ File Upload Success:", response);
+            success: function (response) {
                 if (response.success) {
-                    startDatabaseProgress(parseInt(response.data.total_rows) || 1);
+                    $("#upload-status").text("Processing CSV...");
                 } else {
                     $("#upload-status").text(response.message || "Upload failed.");
-                    console.error("❌ Upload Error:", response.message);
-                    $("#progress-bar").css({ width: "100%", background: "red" });
-                    setTimeout(() => $("#upload-popup").fadeOut(), 3000);
                 }
-            },
-            error: function(xhr, status, error) {
-                console.error("❌ AJAX Error:", xhr.responseText || status, error);
-                $("#upload-status").text("Upload failed: " + (xhr.responseText || error));
-                $("#progress-bar").css({ width: "100%", background: "red" });
-                setTimeout(() => $("#upload-popup").fadeOut(), 3000);
             }
         });
     });

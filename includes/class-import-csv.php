@@ -1,4 +1,4 @@
-<?php
+ <?php
 
 class PR_Import_CSV {
 
@@ -48,121 +48,110 @@ class PR_Import_CSV {
             fclose($handle);
         }
     
-        error_log("✅ Parsed CSV Data: " . print_r($rows, true));
+      //  error_log("✅ Parsed CSV Data: " . print_r($rows, true));
         return $rows;
     }
-    
-    
+public static function insert_contacts($data) {
+    global $wpdb;
 
-
-    public static function insert_contacts($data) {
-        global $wpdb;
-    
-        if (!PR_DB_Handler::check_tables_exist()) {
-            error_log("❌ Database tables missing. Run setup again.");
-            wp_send_json_error(['message' => 'Database tables missing. Run setup again.']);
-            return;
-        }
-    
-        $table_name = $wpdb->prefix . "contacts";
-        $total_rows = count($data);
-        set_transient('csv_import_progress', ['processed' => 0, 'total' => $total_rows], 60 * 5);
-    
-        $processed_rows = 0;
-        foreach ($data as $contact) {
-            $processed_rows++;
-            set_transient('csv_import_progress', ['processed' => $processed_rows, 'total' => $total_rows], 60 * 5);
-    
-            // ✅ Ensure `contact_id` exists
-            if (!isset($contact['contact_id']) || empty(trim($contact['contact_id']))) {
-                error_log("❌ Skipping Row: Missing contact_id | Row Data: " . print_r($contact, true));
-                continue;
-            }
-    
-            // ✅ If `first_name` is missing, use `company_name`
-            $first_name = sanitize_text_field($contact['first_name'] ?? '');
-            if (empty($first_name) && !empty($contact['company_name'])) {
-                $first_name = sanitize_text_field($contact['company_name']);
-                error_log("🔄 First Name Assigned from Company Name: " . $first_name);
-            }
-    
-            // ✅ Normalize phone number format (remove non-numeric characters, limit length)
-            $phone = preg_replace('/[^0-9]/', '', $contact['phone'] ?? '');
-            $phone = substr($phone, 0, 15);
-    
-            // ✅ Ensure valid email address or create placeholder
-            $email = sanitize_email($contact['email'] ?? '');
-            if (empty($email)) {
-                $email = "unknown_" . intval($contact['contact_id']) . "@noemail.com";
-            }
-    
-            // ✅ Handle duplicate emails
-            $existing_email = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table_name WHERE email = %s", $email));
-            if ($existing_email > 0) {
-                $counter = 1;
-                $base_email = $email;
-                while ($wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table_name WHERE email = %s", $email)) > 0) {
-                    $email = $counter . "_" . $base_email;
-                    $counter++;
-                }
-            }
-    
-            error_log("📩 Final Email Assigned: " . $email);
-    
-            // ✅ Check if contact already exists
-            $existing_contact = $wpdb->get_row($wpdb->prepare(
-                "SELECT * FROM $table_name WHERE contact_id = %d", intval($contact['contact_id'])
-            ), ARRAY_A);
-    
-            if ($existing_contact) {
-                // ✅ Prepare Update Query
-                $update_query = $wpdb->prepare(
-                    "UPDATE $table_name SET first_name = %s, last_name = %s, email = %s, phone = %s, address = %s WHERE contact_id = %d",
-                    $first_name,
-                    sanitize_text_field($contact['last_name'] ?? ''),
-                    $email,
-                    sanitize_text_field($phone),
-                    sanitize_text_field($contact['address'] ?? ''),
-                    intval($contact['contact_id'])
-                );
-    
-                error_log("📝 SQL Update Query: " . $update_query);
-    
-                $update_result = $wpdb->query($update_query);
-    
-                if ($update_result === false) {
-                    error_log("❌ Database Update Failed: " . $wpdb->last_error);
-                } else {
-                    error_log("🔄 Contact Updated: " . print_r($contact, true));
-                }
-            } else {
-                // ✅ Prepare Insert Query
-                $insert_query = $wpdb->prepare(
-                    "INSERT INTO $table_name (contact_id, first_name, last_name, email, phone, address) 
-                    VALUES (%d, %s, %s, %s, %s, %s)",
-                    intval($contact['contact_id']),
-                    $first_name,
-                    sanitize_text_field($contact['last_name'] ?? ''),
-                    $email,
-                    sanitize_text_field($phone),
-                    sanitize_text_field($contact['address'] ?? '')
-                );
-    
-                error_log("🚀 SQL Insert Query: " . $insert_query);
-                
-                $insert_result = $wpdb->query($insert_query);
-    
-                if ($insert_result === false) {
-                    error_log("❌ Database Insert Failed: " . $wpdb->last_error);
-                } else {
-                    error_log("✅ Inserted Contact: " . print_r($contact, true));
-                }
-            }
-    
-            $processed_rows++;
-            set_transient('csv_import_progress', ['processed' => $processed_rows, 'total' => $total_rows], 60 * 5);
-        }
+    if (!PR_DB_Handler::check_tables_exist()) {
+        error_log("❌ Database tables missing. Run setup again.");
+        wp_send_json_error(['message' => 'Database tables missing. Run setup again.']);
+        return;
     }
+
+    $table_name = $wpdb->prefix . "contacts";
+    $total_rows = count($data);
+
+    // 🟢 Start Processing Phase
+    set_transient('csv_import_progress', ['stage' => 'processing', 'processed' => 0, 'total' => $total_rows], 60 * 5);
+
+    foreach ($data as $index => $row) {
+        set_transient('csv_import_progress', ['stage' => 'processing', 'processed' => $index + 1, 'total' => $total_rows], 60 * 5);
+    }
+
+    // 🟢 Switch to Inserting Phase
+    set_transient('csv_import_progress', ['stage' => 'inserting', 'processed' => 0, 'total' => $total_rows], 60 * 5);
+
+    $processed_rows = 0;
+
+    foreach ($data as $index => $contact) {
+        $processed_rows++;
+
+        // ✅ Ensure `contact_id` exists
+        if (!isset($contact['contact_id']) || empty(trim($contact['contact_id']))) {
+            continue;
+        }
+
+        // ✅ Sanitize Fields
+        $first_name = sanitize_text_field($contact['first_name'] ?? '');
+        if (empty($first_name) && !empty($contact['company_name'])) {
+            $first_name = sanitize_text_field($contact['company_name']);
+        }
+
+        $phone = preg_replace('/[^0-9]/', '', $contact['phone'] ?? '');
+        $phone = substr($phone, 0, 15);
+        $email = sanitize_email($contact['email'] ?? '');
+        
+        // ✅ Assign default email if missing
+        if (empty($email)) {
+            $email = "unknown_" . intval($contact['contact_id']) . "@noemail.com";
+        }
+
+        // ✅ Check if email already exists
+        $existing_email_count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $table_name WHERE email = %s", $email
+        ));
+
+        // ✅ Append unique identifier if email already exists
+        if ($existing_email_count > 0) {
+            $counter = 1;
+            $base_email = preg_replace('/@/', '_', $email, 1); // Modify email to avoid duplicates
+            while ($wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table_name WHERE email = %s", $email)) > 0) {
+                $email = $base_email . "_$counter@noemail.com";
+                $counter++;
+            }
+        }
+
+        // ✅ Check if contact exists by `contact_id`
+        $existing_contact = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_name WHERE contact_id = %d", intval($contact['contact_id'])
+        ), ARRAY_A);
+
+        if ($existing_contact) {
+            // ✅ Update Existing Contact
+            $wpdb->query($wpdb->prepare(
+                "UPDATE $table_name SET first_name = %s, last_name = %s, email = %s, phone = %s, address = %s WHERE contact_id = %d",
+                $first_name,
+                sanitize_text_field($contact['last_name'] ?? ''),
+                $email,
+                sanitize_text_field($phone),
+                sanitize_text_field($contact['address'] ?? ''),
+                intval($contact['contact_id'])
+            ));
+        } else {
+            // ✅ Insert New Contact
+            $wpdb->query($wpdb->prepare(
+                "INSERT INTO $table_name (contact_id, first_name, last_name, email, phone, address) 
+                VALUES (%d, %s, %s, %s, %s, %s)",
+                intval($contact['contact_id']),
+                $first_name,
+                sanitize_text_field($contact['last_name'] ?? ''),
+                $email,
+                sanitize_text_field($phone),
+                sanitize_text_field($contact['address'] ?? '')
+            ));
+        }
+
+        // 🟢 Update Inserting Progress
+        set_transient('csv_import_progress', ['stage' => 'inserting', 'processed' => $processed_rows, 'total' => $total_rows], 60 * 5);
+    }
+
+   // 🟢 Mark as "completed" after inserting all contacts
+   set_transient('csv_import_progress', ['stage' => 'completed', 'processed' => $total_rows, 'total' => $total_rows], 60 * 5);
+
+}
+
     
     
     

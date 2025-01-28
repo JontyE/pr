@@ -47,7 +47,7 @@ function import_csv_ajax() {
     $file = $_FILES['file'];
     $file_path = $file['tmp_name'];
 
-    error_log("🚀 File received: " . $file_path);
+   // error_log("🚀 File received: " . $file_path);
 
     if (!file_exists($file_path)) {
         wp_send_json_error(['message' => 'Uploaded file not found.']);
