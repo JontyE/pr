@@ -17,15 +17,25 @@ class PR_DB_Handler {
         ) $charset_collate;
 
         CREATE TABLE {$table_prefix}quotes (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            quote_number VARCHAR(50) UNIQUE NOT NULL,
-            contact_id INT NOT NULL,
-            status ENUM('No Guarantee Created', 'Valid', 'Expired') DEFAULT 'No Guarantee Created',
-            valid_until DATE DEFAULT NULL,
-            total_price DECIMAL(10,2) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX contact_idx (contact_id)
-        ) $charset_collate;
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    quote_number VARCHAR(50) UNIQUE NOT NULL,
+    contact_id INT NOT NULL,
+    status ENUM('No Guarantee Created', 'Valid', 'Expired') DEFAULT 'No Guarantee Created',
+    g_valid_date DATE DEFAULT NULL,
+    total_price DECIMAL(10,2) NOT NULL,
+    currency VARCHAR(10) DEFAULT 'ZAR',
+    overall_discount DECIMAL(10,2) DEFAULT 0.00,
+    quote_status VARCHAR(50) NOT NULL,
+    last_status_change DATETIME DEFAULT NULL,
+    sent_when DATETIME DEFAULT NULL,
+    expiry_date DATE DEFAULT NULL,
+    email VARCHAR(255) COLLATE utf8mb4_unicode_520_ci NOT NULL, -- ✅ Match contacts table exactly
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX contact_idx (contact_id),
+    INDEX email_idx (email),
+    FOREIGN KEY (email) REFERENCES {$table_prefix}contacts(email) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE utf8mb4_unicode_520_ci;
+
 
         CREATE TABLE {$table_prefix}line_items (
             id INT AUTO_INCREMENT PRIMARY KEY,

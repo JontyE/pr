@@ -152,7 +152,175 @@ public static function insert_contacts($data) {
 
 }
 
-    
+
+public function process_quotes_csv($file_path) {
+    error_log("🔍 process_quotes_csv started for file: " . $file_path);
+
+    $handle = fopen($file_path, 'r');
+    if (!$handle) {
+        error_log("❌ Failed to open quotes CSV file.");
+        wp_send_json_error(['message' => 'Error: Unable to open CSV file.']);
+        return false;
+    }
+
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'quotes';
+
+    // Normalize emails in contacts table before processing
+    $wpdb->query("UPDATE {$wpdb->prefix}contacts SET email = TRIM(LOWER(email))");
+
+    $row_index = 0;
+    $inserted_count = 0;
+    $skipped_count = 0;
+    $errors = [];
+
+    while (($data = fgetcsv($handle, 1000, ",", '"')) !== FALSE) { // ✅ Handle quoted fields
+        if ($row_index === 0) { // Skip header row
+            error_log("✅ Header row skipped.");
+            $row_index++;
+            continue;
+        }
+
+        error_log("🔹 Processing Row $row_index: " . print_r($data, true));
+
+        // Ensure the row has the correct number of columns
+        if (count($data) < 15) { 
+            error_log("❌ Skipping Row $row_index: Incorrect column count. Data: " . print_r($data, true));
+            $errors[] = "Error in row $row_index: Incorrect column structure.";
+            $skipped_count++;
+            continue;
+        }
+
+        // Extract and sanitize data
+        $quote_number = sanitize_text_field($data[0]);
+        $email = trim(sanitize_email($data[6]));
+        $total_price = floatval(str_replace(',', '', $data[7]));
+        $currency = sanitize_text_field($data[8]);
+        $overall_discount = !empty($data[10]) ? floatval($data[10]) : 0.00;
+        $quote_status = sanitize_text_field($data[11]);
+        $last_status_change = date('Y-m-d H:i:s', strtotime($data[13]));
+        $expiry_date = date('Y-m-d', strtotime($data[14]));
+        $sent_when = !empty($data[12]) ? date('Y-m-d H:i:s', strtotime($data[12])) : NULL;
+
+        // Ensure email is valid
+        if (empty($email) || !is_email($email)) {
+            error_log("⚠️ Invalid or Empty Email in Row $row_index: " . print_r($data, true));
+            $errors[] = "Error in row $row_index: Invalid or empty email.";
+            $skipped_count++;
+            continue;
+        }
+
+        // Retrieve contact_id based on email
+        $contact_id = $wpdb->get_var($wpdb->prepare(
+            "SELECT contact_id FROM {$wpdb->prefix}contacts WHERE TRIM(LOWER(email)) = TRIM(LOWER(%s))",
+            $email
+        ));
+
+        if (!$contact_id) {
+            error_log("⚠️ Contact Not Found for Email in Row $row_index: " . $email);
+            $errors[] = "Error in row $row_index: Contact not found for email " . $email;
+            $skipped_count++;
+            continue;
+        }
+
+        // ✅ Check if quote number already exists
+        $existing_quote = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}quotes WHERE quote_number = %s",
+            $quote_number
+        ));
+
+        if ($existing_quote) {
+            error_log("⚠️ Skipping row $row_index: Quote number $quote_number already exists in database.");
+            $errors[] = "Error in row $row_index: Quote number $quote_number already exists. Skipping row.";
+            $skipped_count++;
+            continue;
+        }
+
+        error_log("✅ Valid Data - Quote Number: $quote_number, Contact ID: $contact_id, Status: $quote_status, Total Price: $total_price");
+
+        // Insert into quotes table
+        $inserted = $wpdb->insert($table_name, [
+            'quote_number' => $quote_number,
+            'contact_id' => $contact_id,
+            'status' => 'No Guarantee Created', // Default status as required
+            'g_valid_date' => NULL, // Reserved for future use
+            'total_price' => $total_price,
+            'currency' => $currency,
+            'overall_discount' => $overall_discount,
+            'quote_status' => $quote_status,
+            'last_status_change' => $last_status_change,
+            'expiry_date' => $expiry_date,
+            'sent_when' => $sent_when,
+            'email' => $email,
+            'created_at' => current_time('mysql')
+        ]);
+
+        if ($inserted) {
+            error_log("✅ Successfully inserted row $row_index into quotes table.");
+            $inserted_count++;
+        } else {
+            error_log("❌ Failed to insert row $row_index into quotes table. MySQL Error: " . $wpdb->last_error);
+            $errors[] = "Error in row $row_index: Database insertion failed.";
+            $skipped_count++;
+        }
+
+        $row_index++;
+    }
+
+    fclose($handle);
+    error_log("📌 process_quotes_csv completed. Inserted: $inserted_count, Skipped: $skipped_count");
+
+    // ✅ Corrected success message
+    wp_send_json_success(['silent' => true]);
+}
+
+
+
+
+public function process_line_items_csv($file_path) {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'line_items';
+
+    if (!file_exists($file_path)) {
+        return false;
+    }
+
+    $handle = fopen($file_path, 'r');
+    if (!$handle) {
+        return false;
+    }
+
+    // Skip header row
+    fgetcsv($handle);
+
+    while (($row = fgetcsv($handle, 1000, ",")) !== false) {
+        $quote_id = intval($row[0]); // Quote Number
+        $item_code = sanitize_text_field($row[1]);
+        $heading = sanitize_text_field($row[2]);
+        $unit_price = floatval(str_replace(',', '', $row[4])); // Remove thousands separator
+        $quantity = intval($row[5]);
+        $item_total = floatval(str_replace(',', '', $row[7])); // Remove thousands separator
+
+        // Ensure required fields are present
+        if (empty($quote_id) || empty($heading) || empty($unit_price) || empty($quantity) || empty($item_total)) {
+            continue;
+        }
+
+        $wpdb->insert($table_name, [
+            'quote_id'   => $quote_id,
+            'item_code'  => $item_code,
+            'heading'    => $heading,
+            'unit_price' => $unit_price,
+            'quantity'   => $quantity,
+            'item_total' => $item_total,
+            'created_at' => current_time('mysql')
+        ]);
+    }
+
+    fclose($handle);
+    return true;
+}
+
     
     
 }
